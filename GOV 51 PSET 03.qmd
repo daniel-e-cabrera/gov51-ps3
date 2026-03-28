@@ -5,6 +5,86 @@ format: pdf
 editor: visual
 ---
 
-GitHub Repository Link:
+GitHub Repository Link: <https://github.com/daniel-e-cabrera/gov51-ps3>
 
-### 1.1.1
+### 1.1
+
+```{r}
+#Load packages and data
+library(tidyverse)
+library(glmnet)
+library(knitr)
+
+compas <- read_csv("data/compas_clean.csv")
+```
+
+### 1.2
+
+```{r}
+#total observations
+nrow(compas)
+
+#total varaibles 
+ncol(compas)
+
+View(compas)
+```
+
+In our compas data set, there are a total of 7,214 observations and 17 different variables. The unit of observation is a single individual. In other words, each row represents a singular, unique person.
+
+### 1.3
+
+```{r}
+#average recidivism rate 
+mean(compas$recidivism)
+
+#possible outcomes of recidivism variable
+unique(compas$recidivism)
+
+```
+
+The overall recidivism rate in the data is 0.45 (1 if the person was rearrested within two years and 0 otherwise). Similarly, the outcome is binary meaning our possible outcomes are either 0 or 1. This matters for how we interpret predictions from a linear model because we know view β1 as a difference in means. In other words, β0 is our control group and β1 is our treatment group or those who were rearrested within two years. So, in contrast to continuous variables where there is gradual change (β1​ = change in Y for a 1-unit increase in X), with a binary variable it’s just a jump between two categories.
+
+### 1.4
+
+```{r}
+compas |>
+  summarise(across(everything(),
+                   list(mean = ~mean(.x),
+                        sd   = ~sd(.x),
+                        min  = ~min(.x),
+                        max  = ~max(.x)),
+                   .names = "{.col}_{.fn}")) |>
+  pivot_longer(everything(),
+               names_to = c("variable", ".value"),
+               names_sep = "_")
+```
+
+The variables with the most variation—taking into account the value of the standard deviations—are age (not finished)
+
+### 1.5
+
+```{r}
+compas |>
+  mutate(priors_cat = case_when
+    (priors_count == 0 ~ "0",
+    priors_count == 1 ~ "1",
+    priors_count == 2 ~ "2",
+    priors_count == 3 ~ "3",
+    priors_count == 4 ~ "4",
+    priors_count == 5 ~ "5",
+    priors_count >= 6 & priors_count <= 10 ~ "6-10",
+    priors_count >= 11 ~ "11+")) |>
+  mutate(priors_cat = factor(priors_cat,
+                             levels = c("0","1","2","3","4","5","6-10","11+"))) |>
+  group_by(priors_cat) |>
+  summarise(recid_rate = mean(recidivism)) |>
+  ggplot(aes(x = priors_cat, y = recid_rate)) +
+  geom_col(fill = "dodgerblue") +
+  labs(x = "Number of Prior Offenses",
+       y = "Recidivism Rate",
+       title = "Recidivism Rate by Number of Prior Offenses")
+
+```
+
+The bar chart shows that as the number of prior offenses increases, the recidivism rate also rises. We can visually observe a positive, roughly linear relationship between these two variables.
