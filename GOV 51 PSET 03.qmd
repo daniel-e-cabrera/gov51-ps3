@@ -85,6 +85,8 @@ compas |>
        y = "Recidivism Rate",
        title = "Recidivism Rate by Number of Prior Offenses")
 
+ggsave("output/bar_chart.png", width = 10, height = 6)
+
 ```
 
 The bar chart shows that as the number of prior offenses increases, the recidivism rate also rises. We can visually observe a positive, roughly linear relationship between these two variables.
