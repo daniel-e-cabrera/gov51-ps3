@@ -24,13 +24,11 @@ compas <- read_csv("data/compas_clean.csv")
 #total observations
 nrow(compas)
 
-#total varaibles 
+#total variables 
 ncol(compas)
-
-View(compas)
 ```
 
-In our compas data set, there are a total of 7,214 observations and 17 different variables. The unit of observation is a single individual. In other words, each row represents a singular, unique person.
+In our COMPAS data set (cleaned version of the ProPublica COMPAS recidivism data set), there are a total of 7,214 observations and 17 different variables. The unit of observation is a single criminal defendent. In other words, each row represents a singular, unique person.
 
 ### 1.3
 
@@ -43,40 +41,80 @@ unique(compas$recidivism)
 
 ```
 
-The overall recidivism rate in the data is 0.45 (1 if the person was rearrested within two years and 0 otherwise). Similarly, the outcome is binary meaning our possible outcomes are either 0 or 1. This matters for how we interpret predictions from a linear model because we know view β1 as a difference in means. In other words, β0 is our control group and β1 is our treatment group or those who were rearrested within two years. So, in contrast to continuous variables where there is gradual change (β1​ = change in Y for a 1-unit increase in X), with a binary variable it’s just a jump between two categories.
+a\) The overall recidivism rate in the data is 45.07% (1 if the person was rearrested within two years and 0 otherwise).
+
+b\) Similarly, the outcome is binary meaning our possible outcomes are either 0 or 1. This matters for how we interpret predictions from a linear model because we know view β1 as a difference in means. In other words, β0 is our control group and β1 is our treatment group or those who were rearrested within two years. So, in contrast to continuous variables where there is gradual change (β1​ = change in Y for a 1-unit increase in X), with a binary variable it’s just a jump between two categories.
 
 ### 1.4
 
 ```{r}
-compas |>
-  summarise(across(everything(),
-                   list(mean = ~mean(.x),
-                        sd   = ~sd(.x),
-                        min  = ~min(.x),
-                        max  = ~max(.x)),
-                   .names = "{.col}_{.fn}")) |>
-  pivot_longer(everything(),
-               names_to = c("variable", ".value"),
-               names_sep = "_")
+#summary statistics
+summary_statistics <- data.frame(
+  Variable = c("Recidivism", "Age", "Female", "Black", "Hispanic",
+               "Asian", "Other Race", "Native American",
+               "Priors Count", "Felony", "Juvenile Felony Count",
+               "Juvenile Misdemeanor Count", "Juvenile Other Count",
+               "Has Juvenile Felony", "Has Juvenile Misdemeanor",
+               "Age Under 25", "Age 25 - 45"),
+
+  Mean = c(
+    mean(compas$recidivism),
+    mean(compas$age),
+    mean(compas$female),
+    mean(compas$black),
+    mean(compas$hispanic),
+    mean(compas$asian),
+    mean(compas$other_race),
+    mean(compas$native_american),
+    mean(compas$priors_count),
+    mean(compas$felony),
+    mean(compas$juv_fel_count),
+    mean(compas$juv_misd_count),
+    mean(compas$juv_other_count),
+    mean(compas$has_juv_felony),
+    mean(compas$has_juv_misd),
+    mean(compas$age_under_25),
+    mean(compas$age_25_45)),
+
+  Std_Dev = c(
+    sd(compas$recidivism),
+    sd(compas$age),
+    sd(compas$female),
+    sd(compas$black),
+    sd(compas$hispanic),
+    sd(compas$asian),
+    sd(compas$other_race),
+    sd(compas$native_american),
+    sd(compas$priors_count),
+    sd(compas$felony),
+    sd(compas$juv_fel_count),
+    sd(compas$juv_misd_count),
+    sd(compas$juv_other_count),
+    sd(compas$has_juv_felony),
+    sd(compas$has_juv_misd),
+    sd(compas$age_under_25),
+    sd(compas$age_25_45)))
+
+print(summary_statistics)
 ```
 
-The variables with the most variation—taking into account the value of the standard deviations—are age (not finished)
+The variables with the most variation are those with the largest standard deviations. Therefore, Priors Count shows by far the greatest variation (SD ≈ 4.88), followed by Age (SD ≈ 11.89, though on a different scale), and among binary variables, Black, Recidivism, Age 25–45, and Felony (all around SD ≈ 0.47–0.50) have relatively high variability.
+
+The variables with the least variation are those with very small standard deviations, indicating they rarely change across observations. These include Native American (SD ≈ 0.05) and Asian (SD ≈ 0.07), followed by Has Juvenile Felony (SD ≈ 0.19) and Other Race (SD ≈ 0.22), which also show relatively low variability.
 
 ### 1.5
 
 ```{r}
+#bar plot
 compas |>
   mutate(priors_cat = case_when
     (priors_count == 0 ~ "0",
-    priors_count == 1 ~ "1",
-    priors_count == 2 ~ "2",
-    priors_count == 3 ~ "3",
-    priors_count == 4 ~ "4",
-    priors_count == 5 ~ "5",
+    priors_count >= 1 & priors_count <= 2 ~ "1-2",
+    priors_count >= 3 & priors_count <= 5 ~ "3-5",
     priors_count >= 6 & priors_count <= 10 ~ "6-10",
     priors_count >= 11 ~ "11+")) |>
   mutate(priors_cat = factor(priors_cat,
-                             levels = c("0","1","2","3","4","5","6-10","11+"))) |>
+                             levels = c("0","1-2","3-5","6-10", "11+"))) |>
   group_by(priors_cat) |>
   summarise(recid_rate = mean(recidivism)) |>
   ggplot(aes(x = priors_cat, y = recid_rate)) +
@@ -89,4 +127,393 @@ ggsave("output/bar_chart.png", width = 10, height = 6)
 
 ```
 
-The bar chart shows that as the number of prior offenses increases, the recidivism rate also rises. We can visually observe a positive, roughly linear relationship between these two variables.
+The bar chart shows that as the number of prior offenses increases, the recidivism rate also rises. We can visually observe a strong, positive, roughly linear relationship between these two variables.
+
+### 2.1
+
+```{r}
+#splitting the data
+set.seed(51)
+n <- nrow(compas)
+train_idx <- sample(1:n, size = floor(0.8 * n))
+train <- compas[train_idx, ]
+test <- compas[-train_idx, ]
+
+nrow(train)
+nrow(test)
+
+```
+
+In our train data subset, there are 5771 observations and in our test data subset, there are 1443 observations.
+
+### 2.2
+
+```{r}
+#OLS regression of recidivism on all other variables 
+recidivism_model <- lm(recidivism ~ ., data = train)
+summary(recidivism_model)
+```
+
+a\) The predictors that are statistically significant at the 5% level are age, gender (female), prior criminal history (priors_count), felony status, history of juvenile misdemeanors (has_juv_misd), and being between the ages of 25 and 45 (age_25_45).
+
+b\) Holding all other variables constant, each additional prior offense (priors_count) is associated with an increase of about 0.0295, or about 2.95 percentage points, in the probability of recidivism, and this effect is statistically significant: p \< 0.001.
+
+### 2.3
+
+```{r}
+prediction_train <- predict(recidivism_model, newdata = train)
+
+actual_train <- train$recidivism
+```
+
+```{r}
+rmse_train <- sqrt((1/5771) * sum((actual_train - prediction_train)^2))
+print(rmse_train)
+```
+
+a\) The in-sample RSME (our predictions on the training data) is 0.4605811.
+
+```{r}
+prediction_test <- predict(recidivism_model, newdata = test)
+
+actual_test <- test$recidivism
+```
+
+```{r}
+rmse_test <- sqrt((1/1443) * sum((actual_test - prediction_test)^2))
+print(rmse_test)
+```
+
+b\) The out-of-sample RSME (our predictions on the test data) is 0.462227.
+
+```{r}
+0.4605811 - 0.462227
+```
+
+c\) The gap between the in-sample and out-of-sample RMSE is -0.0016459. Knowing this, we can conclude that OLS is not over fitting the data with 16 predictors. More specifically, my model is performing about the same on unseen test data as on the training data. That means it is generalizing well. There is no evidence it memorized or over fitted on the training data.
+
+### 2.4
+
+```{r}
+# Assign folds
+set.seed(51)
+folds <- sample(rep(1:5, length.out = nrow(train)))
+
+rmse_cv <- numeric(5)
+for (k in 1:5) {
+  train_k <- train[folds != k, ]
+  test_k <- train[folds == k, ]
+  model_k <- lm(recidivism ~ ., data = train_k)
+  pred_k <- predict(model_k, newdata = test_k)
+  rmse_cv[k] <- sqrt(mean((test_k$recidivism - pred_k)^2))}
+
+mean(rmse_cv)
+```
+
+```{r}
+0.4620144 - 0.462227
+```
+
+a\) The 5-fold CV estimate of RMSE is 0.4620144. Compared to our single-split out-of-sample RSME (0.462227) is it 0.0002126 smaller.
+
+b\) Cross-validation is more reliable than a single train/test split because it repeatedly splits the data into different subsets, reducing the dependence on any one random split and therefore, providing a more stable and representative estimate of model performance.
+
+c\) Cross-validation is the right tool for choosing lambda because it evaluates how well different values of lambda perform on unseen data, allowing me to select the value that minimizes out-of-sample prediction error. In other words, it helps me pick the value of lambda that gives me the most accurate prediction.
+
+### 3.1
+
+```{r}
+#Full interaction formula
+f_full <- recidivism ~ (.)^2 +
+  I(age^2) + I(priors_count^2) +
+  I(juv_fel_count^2) + I(juv_misd_count^2) +
+  I(juv_other_count^2)
+
+# Create design matrices for glmnet 
+X_train <- model.matrix(f_full, data = train)[, -1]
+X_test <- model.matrix(f_full, data = test)[, -1]
+y_train <- train$recidivism
+y_test <- test$recidivism
+
+# How many features now?
+ncol(X_train)
+
+#ratio
+training_observations <- nrow(X_train)
+predictors <- ncol(X_train)
+
+training_observations / predictors
+
+```
+
+a\) This kitchen sink model now has 141 predictors.
+
+b\) The ratio of training observations to predictors is 40.92908.
+
+### 3.2
+
+```{r}
+ols_full <- lm(f_full, data = train)
+
+#in-sample RSME
+train_preds_1 <- predict(ols_full, newdata = train)
+train_actual_1 <- train$recidivism
+
+rmse_train <- sqrt(mean((train_actual_1 - train_preds_1)^2))
+print(rmse_train)
+
+#out-of-sample RSME
+test_preds_2 <- predict(ols_full, newdata = test)
+test_actual_2 <- test$recidivism
+
+rmse_test <- sqrt(mean((test_actual_2 - test_preds_2)^2))
+print(rmse_test)
+```
+
+```{r}
+0.4485474 - 0.4890411
+```
+
+```{r}
+ 0.0404937 - 0.0016459
+```
+
+a\) The in-sample RMSE is 0.4485474
+
+b\) The out-of-sample RMSE is 0.4890411.
+
+c\) The difference between the two is 0.0404937. This gap between the in-sample/out-of-sample for the kitchen sink model is 0.0388478 bigger than the in-sample/out-of-sample for the simple model.The much larger RMSE gap in the kitchen sink model tells us that adding many interaction and squared terms caused the model to over fit the training data. With 141 predictors, the model becomes very flexible and starts capturing noise specific to the training set, which lowers in-sample error but hurts it predictive ability on the new data. In contrast, the simpler model with 16 predictors is more constrained, so it generalizes better and has nearly identical train and test RMSE.
+
+### 3.3
+
+Adding 141 interaction terms makes the model much more flexible, allowing it to fit the training data very closely, including random noise rather than just the true underlying patterns. This improves in-sample fit but hurts out-of-sample performance because those noise-driven patterns do not generalize to new data. This phenomenon is called overfitting.
+
+### 4.1
+
+```{r}
+set.seed(51) # for reproducible CV folds
+cv_ridge <- cv.glmnet(X_train, y_train, alpha = 0, nfolds = 10)
+
+optimal_lambda <- cv_ridge$lambda.min
+print(optimal_lambda)
+```
+
+a\) The optimal lambda selected by cross-validation is 0.01376272.
+
+```{r}
+plot(cv_ridge)
+```
+
+b\) The plot shows the cross-validated mean squared error as a function of lambda. As lambda (or in other words, your penalty) increases, the error (RSME) decreases and then levels off, indicating that less regularization improves model fit up to a certain point, which we know is 0.01376272. The dashed lines mark lambda_min (lowest error) (left) and lambda 1se (right).
+
+### 4.2
+
+```{r}
+ridge_preds <- predict(cv_ridge, newx = X_test, s = optimal_lambda)
+
+rmse_ridge <- sqrt(mean((y_test - ridge_preds)^2))
+print(rmse_ridge)
+```
+
+The out-of-sample RMSE for Ridge is 0.4700385. The out-of-sample RMSE for the simple OLS (16 variables) is 0.462227 and the out-of-sample RMSE for the kitchen sink OLS (141 variables) is 0.4890411. Here, we can clearly see that the largest RMSE is that of the kitchen sink OLS, followed by Ridge, and with the lowest RMSE is the simple OLS.
+
+This suggests that the kitchen sink OLS model is overfitting the training data. By including a large number of interaction and squared terms, the model becomes overly complex and captures noise rather than true underlying relationships. Ridge regression helps reduce this overfitting by shrinking coefficients, thus improving performance relative to the kitchen sink OLS, but it still does not outperform the simpler OLS model. The simple OLS model likely achieves the lowest RMSE because it strikes a better balance between bias and variance, capturing the main patterns in the data without overfitting.
+
+### 4.3
+
+```{r}
+ridge_coeff <- coef(cv_ridge, s = "lambda.min")
+print(ridge_coeff)
+```
+
+Ridge did not eliminate any variables. We still have all 141. In general, Ridge never shrinks coefficients to zero, instead it shrinks coefficients closer to zero. Therefore, all the coefficients are still there but smaller. In other words, Ridge regression reduces the impact of predictors by shrinking their coefficients, but it does not eliminate any variables from the model.
+
+### 5.1
+
+```{r}
+set.seed(51)
+cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10)
+
+optimal_lasso_lambda <- cv_lasso$lambda.min
+print(optimal_lasso_lambda)
+```
+
+a\) The optimal lambda selected by cross-validation is 0.007694477.
+
+```{r}
+plot(cv_lasso)
+```
+
+### 5.2
+
+```{r}
+lasso_coef <- coef(cv_lasso, s = optimal_lasso_lambda)
+sum(lasso_coef == 0)
+sum(lasso_coef != 0)
+
+#specfic variables kept
+#Convert to regular matrix
+lasso_mat <- as.matrix(lasso_coef)
+kept_variables <- rownames(lasso_mat)[lasso_mat != 0]
+print(kept_variables)
+```
+
+a\) Of the 141 variables, 114 were set to zero and 27 were kept by LASSO. A few of the surviving interactions terms were x and y.
+
+b\) Several of the surviving interaction terms, such as age × female, female × priors_count, and priors_count × age group, are substantively meaningful because they capture how the effect of one variable depends on another. For example, the impact of prior offenses may differ across age groups, and the relationship between age and recidivism may vary by gender. Other interactions, like black × juvenile felony count or female × black, reflect real issues in society caused by racism and structural inequality.
+
+c\) These results illustrate how LASSO reduces subjective discretion in model building. Instead of the researcher choosing which interaction terms to include, LASSO considers a large set of possible interactions and retains only those that improve model performance, shrinking the rest to zero. The fact that the remaining interactions are interpretable and substantively reasonable suggests that the model is identifying meaningful patterns in the data rather than relying on arbitrary researcher decisions.
+
+### 5.3
+
+```{r}
+lasso_preds <- predict(cv_lasso, newx = X_test, s = optimal_lasso_lambda)
+
+rmse_lasso <- sqrt(mean((y_test - lasso_preds)^2))
+print(rmse_lasso)
+```
+
+The out-of-sample RMSE for LASSO is 0.4592597. The out-of-sample RMSE for Ridge is 0.4700385. The out-of-sample RMSE for the simple OLS (16 variables) is 0.462227 and the out-of-sample RMSE for the kitchen sink OLS (141 variables) is 0.4890411. Here, we can clearly see that the largest RMSE is that of the kitchen sink OLS, followed by Ridge, followed by OLS, and the **lowest RMSE is that of LASSO**.
+
+### 6.1
+
+```{r}
+set.seed(51)
+cv_enet <- cv.glmnet(X_train, y_train, alpha = 0.5, nfolds = 10)
+```
+
+```{r}
+# Predictions using optimal lambda
+elastic_net_predict <- predict(cv_enet, newx = X_test, s = "lambda.min")
+
+# RMSE
+rmse_elastic_net <- sqrt(mean((y_test - elastic_net_predict)^2))
+print(rmse_elastic_net)
+```
+
+The out-of-sample RMSE using Elastic Net is 0.4583446.
+
+```{r}
+elastic_net_coef <- coef(cv_enet, s = "lambda.min")
+elastic_net_mat <- as.matrix(elastic_net_coef)
+
+# Count nonzero coefficients
+num_kept <- sum(elastic_net_mat != 0)
+
+num_kept
+```
+
+The variables retained were 43 in total.
+
+### 6.2
+
+OLS (16 predictors):
+
+-   Predictors: 16
+
+-   Out-of Sample RMSE: 0.462227
+
+OLS (\~141 variables):
+
+-   Predictors: \~141
+
+-   Out-of Sample RMSE: 0.4890411
+
+Ridge:
+
+-   Predictors: \~141
+
+-   Out-of Sample RMSE: 0.4700385
+
+Lasso:
+
+-   Predictors: 27
+
+-   Out-of Sample RMSE: 0.4592597
+
+Elastic Net:
+
+-   Predictors: 43
+
+-   Out-of Sample RMSE: 0.4583446
+
+a\) The model with the lowest out-of-sample RMSE is the elastic net, with an RMSE of 0.4583.
+
+b\) The model with the best in-sample fit is the kitchen sink OLS model with approximately 141 predictors. These are not the same model.
+
+c\) This table illustrates the bias-variance trade off because the kitchen sink OLS model is highly flexible and fits the training data very well (low bias), but it overfits and performs poorly on new data (high variance). In contrast, the elastic net model uses regularization to reduce variance, leading to better out-of-sample performance even if it sacrifices some in-sample fit.
+
+### 6.3
+
+a\) LASSO helped narrow the disagreement by selecting peer firms based on predictive performance rather than expert judgment, reducing the scope for each expert to choose different comparison groups. It replaces subjective choices with a more data-driven and transparent method.
+
+b\) The traditional OLS approach gives the most room for manipulation through subjective choices about model specification, especially which variables to include, which can meaningfully change the results. This flexibility allows experts to reach different conclusions from the same data.
+
+### 6.4
+
+a\) No, the LASSO coefficient would not answer the casual question on priors_count. While LASSO helps us understand our model better, ensuring that we don't over fit onto any training data, it does not tell us anything about causality. More specifically, it is biased because of regularization and does not solve for confounding. LASSO may even drop important confounders.
+
+b\) Prediction uses regression to maximize accuracy in predicting outcomes, without requiring coefficients to have any causal meaning. Causal inference on the other hand, uses regression to estimate the effect of one variable on another, requiring careful control of confounders so the coefficients can be interpreted as causal effects. Additionally, regression used for causality assumes there is no bias.
+
+### 6.5
+
+```{r}
+
+#predictions
+test_preds <- predict(recidivism_model, newdata = test)
+
+#define racial groups
+black <- test$black == 1
+
+white <- test$black == 0 & 
+             test$hispanic == 0 & 
+             test$asian == 0 & 
+             test$other_race == 0 & 
+             test$native_american == 0
+
+#number in each group
+num_black <- sum(test$black == 1)
+print(num_black)
+
+num_white <- sum(test$black == 0 & 
+                 test$hispanic == 0 & 
+                 test$asian == 0 & 
+                 test$other_race == 0 & 
+                 test$native_american == 0)
+
+print(num_white)
+
+#mean predicted probabilities
+mean_pred_black <- mean(test_preds[black])
+mean_pred_white <- mean(test_preds[white])
+
+#actual recidivism rates
+
+mean_actual_black <- mean(test$recidivism[black])
+mean_actual_white <- mean(test$recidivism[white])
+
+#table
+results <- data.frame(
+  Group = c("Black", "White"),
+  Predicted = c(mean_pred_black, mean_pred_white),
+  Actual = c(mean_actual_black, mean_actual_white))
+
+print(results)
+
+
+```
+
+```{r}
+0.5119850 - 0.5212620
+0.3789606 - 0.4020202
+```
+
+a\) Yes, there is a difference. The predicted for black defendants is larger than the predicted for white defendants. Additionally, the gap between the predicted and actual for black defendants is much smaller than the gap between predicted and actual for white defendants. In other words, the model is under predicting for white defendants more so than it is under predicting for black defendants.
+
+b\)
+
+-   Black Defendants: 0.5212620
+
+-   White Defendants: 0.4020202
+
+c\) The tradeoffs of using predcition algorithms in criminal justice is that you can be using a model that is unfortuntely biased. While the model may seem helpful in making predictions, it is shaped by biased decisions made by others in the past. In other words, using this model can continue historic systematic inequalities.
